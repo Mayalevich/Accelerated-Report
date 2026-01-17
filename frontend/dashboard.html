@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Developer Dashboard - Accelerated Report</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Developer Dashboard</h1>
+            <p>All submitted reports with enrichment data</p>
+        </header>
+
+        <nav class="nav-links">
+            <a href="index.html">← Back to Report Form</a>
+            <button id="refreshBtn" class="btn-secondary">🔄 Refresh</button>
+        </nav>
+
+        <div class="stats-cards">
+            <div class="stat-card">
+                <div class="stat-value" id="totalReports">0</div>
+                <div class="stat-label">Total Reports</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="crashCount">0</div>
+                <div class="stat-label">Crashes</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="slowCount">0</div>
+                <div class="stat-label">Slow Issues</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="bugCount">0</div>
+                <div class="stat-label">Bugs</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>All Reports</h2>
+            <div id="reportsList" class="reports-list">
+                <div class="loading">Loading reports...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accelerated Report - Submit Feedback</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>⚡ Accelerated Report</h1>
+            <p>Fast, reliable in-app reporting</p>
+        </header>
+
+        <!-- Chaos Mode Toggle -->
+        <div class="chaos-toggle">
+            <label class="switch">
+                <input type="checkbox" id="chaosMode">
+                <span class="slider"></span>
+            </label>
+            <span>Chaos Mode (simulate failures)</span>
+        </div>
+
+        <!-- Main Report Form -->
+        <div class="card">
+            <h2>Report a Problem</h2>
+            <p class="subtitle">Help us improve - this takes 10 seconds</p>
+
+            <form id="reportForm">
+                <div class="form-group">
+                    <label for="reportType">What's the issue?</label>
+                    <select id="reportType" required>
+                        <option value="">Select type...</option>
+                        <option value="crash">🔴 App Crash</option>
+                        <option value="slow">🟡 Slow Performance</option>
+                        <option value="bug">🐛 Bug / Error</option>
+                        <option value="suggestion">💡 Suggestion</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="message">What happened?</label>
+                    <textarea 
+                        id="message" 
+                        rows="4" 
+                        placeholder="Describe the issue briefly..."
+                        required
+                        minlength="3"
+                    ></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="platform">Platform</label>
+                        <select id="platform">
+                            <option value="web">Web</option>
+                            <option value="ios">iOS</option>
+                            <option value="android">Android</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="appVersion">App Version</label>
+                        <input type="text" id="appVersion" value="1.0.0" readonly>
+                    </div>
+                </div>
+
+                <button type="submit" id="submitBtn" class="btn-primary">
+                    Send Report
+                </button>
+            </form>
+
+            <!-- Status Messages -->
+            <div id="statusMessage" class="status-message hidden"></div>
+
+            <!-- Queue Status -->
+            <div id="queueStatus" class="queue-status hidden">
+                <span class="queue-badge">⏳ <span id="queueCount">0</span> queued</span>
+            </div>
+        </div>
+
+        <!-- Developer Dashboard Link -->
+        <div class="dashboard-link">
+            <a href="dashboard.html">View Developer Dashboard →</a>
+        </div>
+
+        <!-- Recent Submissions -->
+        <div class="card recent-submissions">
+            <h3>Recent Submissions</h3>
+            <div id="recentList"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
