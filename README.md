@@ -137,14 +137,26 @@ Sentry (errors • traces • metrics)
 
 ## 🚀 Quick Start
 
-### One-Command Setup
+### One-Command Startup ⚡
 
 ```bash
-# Clone and setup everything
+# Clone the repository
 git clone https://github.com/Mayalevich/Accelerated-Report.git
 cd Accelerated-Report
-chmod +x start.sh
+
+# Start everything (both backend and frontend)
 ./start.sh
+```
+
+That's it! The script will:
+- ✅ Install dependencies (first time only)
+- ✅ Start backend on http://localhost:8000
+- ✅ Start frontend on http://localhost:3000
+- ✅ Open browser automatically
+
+**Stop servers:**
+```bash
+./stop.sh
 ```
 
 ### Manual Setup
