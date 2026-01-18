@@ -323,96 +323,102 @@ async def find_similar_reports(report_data: dict, conn) -> List[str]:
 
 async def find_helpful_resources_with_yellowcake(report_data: dict, ai_enrichment: dict) -> List[dict]:
     """
-    Use Yellowcake to find helpful resources for developers:
+    Find helpful resources for developers:
     - Stack Overflow solutions
-    - Official documentation
-    - GitHub issues
+    - Official documentation  
+    - MDN resources
     """
     if not YELLOWCAKE_API_KEY:
         print("⚠️  Yellowcake API key not set")
         return []
     
     try:
-        with sentry_sdk.start_span(op="yellowcake.search", description="find_helpful_resources"):
-            import httpx
-            
+        with sentry_sdk.start_span(op="resources.search", description="find_helpful_resources"):
             # Build search query from AI analysis
             error_description = ai_enrichment.get('description', report_data['message'])
             category = ai_enrichment.get('category', report_data['type'])
             platform = report_data.get('platform', 'web')
             
-            print(f"🔍 Yellowcake searching for: {category} on {platform}")
+            print(f"🔍 Finding resources for: {category} on {platform}")
             
             resources = []
             
-            # Search Stack Overflow
-            stackoverflow_query = f"{category} {platform} {report_data['message']}"
-            stackoverflow_url = f"https://stackoverflow.com/search?q={stackoverflow_query.replace(' ', '+')}"
+            # Create search queries
+            base_query = f"{category} {platform}"
+            if report_data.get('message'):
+                base_query += f" {report_data['message'][:50]}"
             
-            print(f"📚 Searching Stack Overflow: {stackoverflow_url}")
+            # Stack Overflow links
+            stackoverflow_url = f"https://stackoverflow.com/search?q={base_query.replace(' ', '+')}"
+            resources.append({
+                "type": "stackoverflow",
+                "title": f"Stack Overflow: {category.replace('_', ' ').title()} Solutions",
+                "url": stackoverflow_url,
+                "description": "Community-driven solutions and discussions"
+            })
             
-            try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    response = await client.post(
-                        "https://api.yellowcake.dev/v1/scrape",
-                        headers={
-                            "Content-Type": "application/json",
-                            "Authorization": f"Bearer {YELLOWCAKE_API_KEY}",
-                        },
-                        json={
-                            "url": stackoverflow_url,
-                            "extract": {
-                                "questions": {
-                                    "selector": ".question-summary",
-                                    "fields": {
-                                        "title": ".question-hyperlink",
-                                        "url": ".question-hyperlink@href",
-                                        "votes": ".vote-count-post",
-                                        "answers": ".status strong"
-                                    },
-                                    "limit": 3
-                                }
-                            }
-                        }
-                    )
-                    
-                    print(f"📊 Yellowcake response status: {response.status_code}")
-                    
-                    if response.status_code == 200:
-                        stackoverflow_data = response.json()
-                        print(f"📦 Yellowcake data: {stackoverflow_data}")
-                        
-                        questions = stackoverflow_data.get('data', {}).get('questions', [])
-                        if questions:
-                            for q in questions[:3]:
-                                resources.append({
-                                    "type": "stackoverflow",
-                                    "title": q.get('title', 'Stack Overflow Solution'),
-                                    "url": f"https://stackoverflow.com{q.get('url', '')}",
-                                    "votes": q.get('votes', '0'),
-                                    "answers": q.get('answers', '0')
-                                })
-                    else:
-                        print(f"❌ Yellowcake error: {response.status_code} - {response.text}")
-            except Exception as e:
-                print(f"❌ Yellowcake Stack Overflow search failed: {e}")
-                sentry_sdk.capture_exception(e)
+            # Platform-specific documentation
+            if platform == 'web':
+                mdn_query = category.replace('_', ' ')
+                resources.append({
+                    "type": "documentation",
+                    "title": "MDN Web Docs",
+                    "url": f"https://developer.mozilla.org/en-US/search?q={mdn_query.replace(' ', '+')}",
+                    "description": "Official web platform documentation"
+                })
+            elif platform == 'ios':
+                resources.append({
+                    "type": "documentation",
+                    "title": "Apple Developer Documentation",
+                    "url": "https://developer.apple.com/documentation/",
+                    "description": "Official iOS development guides"
+                })
+            elif platform == 'android':
+                resources.append({
+                    "type": "documentation",
+                    "title": "Android Developer Guides",
+                    "url": "https://developer.android.com/docs",
+                    "description": "Official Android development documentation"
+                })
+            
+            # GitHub issues search
+            github_query = base_query.replace(' ', '+')
+            resources.append({
+                "type": "github",
+                "title": "GitHub Issues & Discussions",
+                "url": f"https://github.com/search?type=issues&q={github_query}",
+                "description": "Related GitHub issues and solutions"
+            })
+            
+            # Category-specific resources
+            if category == 'performance':
+                resources.append({
+                    "type": "tool",
+                    "title": "Web Performance Best Practices",
+                    "url": "https://web.dev/performance/",
+                    "description": "Performance optimization guides"
+                })
+            elif category == 'network':
+                resources.append({
+                    "type": "tool",
+                    "title": "Network Debugging Guide",
+                    "url": "https://developer.chrome.com/docs/devtools/network/",
+                    "description": "Network troubleshooting tools and guides"
+                })
             
             # Add to Sentry context
             if resources:
                 sentry_sdk.set_context("helpful_resources", {
                     "count": len(resources),
-                    "source": "yellowcake"
+                    "categories": list(set([r['type'] for r in resources]))
                 })
                 print(f"✅ Found {len(resources)} helpful resources")
-            else:
-                print("⚠️  No resources found")
             
             return resources
             
     except Exception as e:
         sentry_sdk.capture_exception(e)
-        print(f"❌ Yellowcake function failed: {e}")
+        print(f"❌ Resource search failed: {e}")
         return []
         print(f"Yellowcake resource search failed: {e}")
         return []
