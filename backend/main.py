@@ -168,6 +168,9 @@ async def send_to_sentry_for_grouping(report_data: dict, ai_enrichment: dict):
     """
     Send report to Sentry for automatic issue grouping.
     
+    For bug reports (crash/bug/slow), also triggers an actual error in Sentry
+    so you can see the full error tracking capabilities.
+    
     Sentry's built-in grouping will:
     - Group similar errors together
     - Detect duplicate issues
@@ -198,11 +201,26 @@ async def send_to_sentry_for_grouping(report_data: dict, ai_enrichment: dict):
                 report_data.get('platform', 'unknown')
             ]
             
-            # Capture as message (not error) for user reports
-            sentry_sdk.capture_message(
-                f"User Report: {ai_enrichment.get('description', report_data['message'])}",
-                level=ai_enrichment.get('severity', 'info')
-            )
+            # For bug/crash/slow reports, trigger an actual error in Sentry
+            if report_data['type'] in ['crash', 'bug', 'slow']:
+                # Create a custom exception based on the report type
+                error_messages = {
+                    'crash': f"Application Crash: {ai_enrichment.get('description', report_data['message'])}",
+                    'bug': f"Bug Report: {ai_enrichment.get('description', report_data['message'])}",
+                    'slow': f"Performance Issue: {ai_enrichment.get('description', report_data['message'])}"
+                }
+                
+                # Create custom exception
+                exception = Exception(error_messages[report_data['type']])
+                
+                # Capture as error so it shows in Issues tab
+                sentry_sdk.capture_exception(exception)
+            else:
+                # For suggestions, just capture as message
+                sentry_sdk.capture_message(
+                    f"User Suggestion: {ai_enrichment.get('description', report_data['message'])}",
+                    level='info'
+                )
             
     except Exception as e:
         print(f"Failed to send to Sentry: {e}")
