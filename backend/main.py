@@ -30,8 +30,8 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if AI_ENABLED and GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Use gemini-1.5-pro for vision capabilities (can analyze images + text)
-    gemini_model = genai.GenerativeModel('gemini-1.5-pro')
+    # Use gemini-2.5-flash for vision capabilities (can analyze images + text)
+    gemini_model = genai.GenerativeModel('gemini-2.5-flash')
     print("✅ Gemini AI enabled (with vision)")
 else:
     gemini_model = None
