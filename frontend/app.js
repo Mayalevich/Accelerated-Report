@@ -11,6 +11,7 @@ let retryInterval = null;
 const form = document.getElementById('reportForm');
 const submitBtn = document.getElementById('submitBtn');
 const statusMessage = document.getElementById('statusMessage');
+const aiStatus = document.getElementById('aiStatus');
 const chaosModeToggle = document.getElementById('chaosMode');
 const queueStatus = document.getElementById('queueStatus');
 const queueCount = document.getElementById('queueCount');
@@ -26,7 +27,34 @@ document.addEventListener('DOMContentLoaded', () => {
         chaosMode = e.target.checked;
         showStatus(chaosMode ? '⚠️ Chaos Mode Enabled' : '✅ Normal Mode', chaosMode ? 'warning' : 'success');
     });
+
+    // Quick action buttons
+    document.querySelectorAll('.quick-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const type = e.currentTarget.dataset.type;
+            const message = e.currentTarget.dataset.message;
+            
+            // Visual feedback
+            e.currentTarget.classList.add('clicked');
+            setTimeout(() => e.currentTarget.classList.remove('clicked'), 300);
+            
+            await submitReport({
+                type: type,
+                message: message,
+                platform: detectPlatform(),
+                app_version: '1.0.0',
+            }, true); // true = quick action
+        });
+    });
 });
+
+// Auto-detect platform
+function detectPlatform() {
+    const ua = navigator.userAgent;
+    if (/iPad|iPhone|iPod/.test(ua)) return 'ios';
+    if (/Android/.test(ua)) return 'android';
+    return 'web';
+}
 
 // Form submission
 form.addEventListener('submit', async (e) => {
@@ -34,18 +62,23 @@ form.addEventListener('submit', async (e) => {
     
     const reportData = {
         type: document.getElementById('reportType').value,
-        message: document.getElementById('message').value,
-        platform: document.getElementById('platform').value,
-        app_version: document.getElementById('appVersion').value,
+        message: document.getElementById('message').value || document.getElementById('reportType').selectedOptions[0].textContent,
+        platform: detectPlatform(),
+        app_version: '1.0.0',
     };
     
-    await submitReport(reportData);
+    await submitReport(reportData, false);
 });
 
-// Submit report with chaos mode simulation
-async function submitReport(reportData) {
-    submitBtn.disabled = true;
-    showStatus('📤 Sending report...', 'info');
+// Submit report with chaos mode simulation and AI enrichment
+async function submitReport(reportData, isQuickAction = false) {
+    if (submitBtn) submitBtn.disabled = true;
+    showStatus('📤 Sending...', 'info');
+    
+    // Show AI processing for quick actions
+    if (isQuickAction) {
+        showAIStatus(true);
+    }
     
     try {
         // Chaos mode: simulate random failures
@@ -72,19 +105,37 @@ async function submitReport(reportData) {
         
         const result = await response.json();
         
-        // Success
-        showStatus(`✅ Report sent successfully! ID: ${result.report_id.substring(0, 8)}...`, 'success');
+        // Show AI enrichment result if available
+        if (result.ai_enriched) {
+            showStatus(`✅ Sent! AI detected: ${result.category || 'analyzing'}`, 'success');
+        } else {
+            showStatus(`✅ Report sent!`, 'success');
+        }
+        
         addToRecent(reportData, result.report_id);
-        form.reset();
+        if (form) form.reset();
         
     } catch (error) {
         console.error('Submit failed:', error);
         
         // Queue the report for retry
         queueReport(reportData);
-        showStatus('⏳ Connection failed. Report queued for retry.', 'warning');
+        showStatus('⏳ Queued - will retry automatically', 'warning');
     } finally {
-        submitBtn.disabled = false;
+        if (submitBtn) submitBtn.disabled = false;
+        showAIStatus(false);
+    }
+}
+
+// Show/hide AI processing indicator
+function showAIStatus(show) {
+    if (aiStatus) {
+        if (show) {
+            aiStatus.classList.remove('hidden');
+            setTimeout(() => aiStatus.classList.add('hidden'), 2000);
+        } else {
+            aiStatus.classList.add('hidden');
+        }
     }
 }
 

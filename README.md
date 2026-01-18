@@ -40,10 +40,11 @@
 
 **Accelerated Report App** makes reporting effortless:
 
-- ⚡ **10-Second Submission** - One dropdown + one text field = done
+- ⚡ **5-Second Submission** - One-tap quick actions (no typing required!)
+- 🤖 **AI-Powered** - Gemini auto-categorizes, detects severity & duplicates
+- 🔍 **Smart Deduplication** - Yellowcake-inspired similarity detection
 - 🔒 **Never Lose Reports** - Offline queue with automatic retry
 - 📊 **Full Observability** - Sentry monitors every critical experience
-- 🧠 **Smart Enrichment** - Optional AI categorization & similarity detection
 - 🎪 **Demo-Ready** - Chaos Mode proves reliability under failure
 
 ---

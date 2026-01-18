@@ -11,7 +11,7 @@
         <!-- Header -->
         <header>
             <h1>⚡ Accelerated Report</h1>
-            <p>Fast, reliable in-app reporting</p>
+            <p>Fast, reliable feedback - takes 5 seconds</p>
         </header>
 
         <!-- Chaos Mode Toggle -->
@@ -23,57 +23,66 @@
             <span>Chaos Mode (simulate failures)</span>
         </div>
 
-        <!-- Main Report Form -->
+        <!-- Quick Feedback Buttons -->
         <div class="card">
-            <h2>Report a Problem</h2>
-            <p class="subtitle">Help us improve - this takes 10 seconds</p>
+            <h2>Quick Feedback</h2>
+            <p class="subtitle">One tap - we'll handle the details</p>
 
-            <form id="reportForm">
-                <div class="form-group">
-                    <label for="reportType">What's the issue?</label>
-                    <select id="reportType" required>
-                        <option value="">Select type...</option>
-                        <option value="crash">🔴 App Crash</option>
-                        <option value="slow">🟡 Slow Performance</option>
-                        <option value="bug">🐛 Bug / Error</option>
-                        <option value="suggestion">💡 Suggestion</option>
-                    </select>
-                </div>
+            <div class="quick-actions">
+                <button class="quick-btn quick-crash" data-type="crash" data-message="App crashed unexpectedly">
+                    🔴 App Crashed
+                </button>
+                <button class="quick-btn quick-slow" data-type="slow" data-message="App is running slowly">
+                    🟡 Too Slow
+                </button>
+                <button class="quick-btn quick-bug" data-type="bug" data-message="Something's not working right">
+                    🐛 Found a Bug
+                </button>
+                <button class="quick-btn quick-suggestion" data-type="suggestion" data-message="I have a suggestion">
+                    💡 Suggestion
+                </button>
+            </div>
 
-                <div class="form-group">
-                    <label for="message">What happened?</label>
-                    <textarea 
-                        id="message" 
-                        rows="4" 
-                        placeholder="Describe the issue briefly..."
-                        required
-                        minlength="3"
-                    ></textarea>
-                </div>
+            <div class="divider">
+                <span>or</span>
+            </div>
 
-                <div class="form-row">
+            <!-- Detailed Form (Collapsed by default) -->
+            <details class="detailed-form">
+                <summary>📝 Add more details (optional)</summary>
+                <form id="reportForm">
                     <div class="form-group">
-                        <label for="platform">Platform</label>
-                        <select id="platform">
-                            <option value="web">Web</option>
-                            <option value="ios">iOS</option>
-                            <option value="android">Android</option>
+                        <label for="reportType">Issue Type</label>
+                        <select id="reportType" required>
+                            <option value="crash">🔴 App Crash</option>
+                            <option value="slow">🟡 Slow Performance</option>
+                            <option value="bug">🐛 Bug / Error</option>
+                            <option value="suggestion">💡 Suggestion</option>
                         </select>
                     </div>
 
                     <div class="form-group">
-                        <label for="appVersion">App Version</label>
-                        <input type="text" id="appVersion" value="1.0.0" readonly>
+                        <label for="message">What happened?</label>
+                        <textarea 
+                            id="message" 
+                            rows="3" 
+                            placeholder="Optional - add context..."
+                        ></textarea>
                     </div>
-                </div>
 
-                <button type="submit" id="submitBtn" class="btn-primary">
-                    Send Report
-                </button>
-            </form>
+                    <button type="submit" id="submitBtn" class="btn-primary">
+                        Send Detailed Report
+                    </button>
+                </form>
+            </details>
 
             <!-- Status Messages -->
             <div id="statusMessage" class="status-message hidden"></div>
+
+            <!-- AI Enrichment Status -->
+            <div id="aiStatus" class="ai-status hidden">
+                <div class="ai-badge">🤖 AI analyzing...</div>
+            </div>
 
             <!-- Queue Status -->
             <div id="queueStatus" class="queue-status hidden">

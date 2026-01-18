@@ -3,3 +3,6 @@ uvicorn[standard]
 sentry-sdk
 python-dotenv
 httpx
+google-generativeai
+numpy
+scikit-learn

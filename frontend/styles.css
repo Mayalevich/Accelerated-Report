@@ -141,6 +141,133 @@ header p {
     color: white;
 }
 
+/* Quick Action Buttons */
+.quick-actions {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.quick-btn {
+    padding: 2rem 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.quick-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.quick-btn.clicked {
+    transform: scale(0.95);
+}
+
+.quick-crash:hover {
+    border-color: var(--error);
+    background: #fef2f2;
+}
+
+.quick-slow:hover {
+    border-color: var(--warning);
+    background: #fffbeb;
+}
+
+.quick-bug:hover {
+    border-color: #8b5cf6;
+    background: #f5f3ff;
+}
+
+.quick-suggestion:hover {
+    border-color: #06b6d4;
+    background: #ecfeff;
+}
+
+/* Divider */
+.divider {
+    text-align: center;
+    margin: 2rem 0;
+    position: relative;
+}
+
+.divider:before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--border);
+}
+
+.divider span {
+    position: relative;
+    background: white;
+    padding: 0 1rem;
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+/* Detailed Form */
+.detailed-form {
+    margin-top: 1rem;
+}
+
+.detailed-form summary {
+    cursor: pointer;
+    font-weight: 500;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    transition: all 0.2s;
+}
+
+.detailed-form summary:hover {
+    background: #f3f4f6;
+}
+
+.detailed-form[open] summary {
+    margin-bottom: 1.5rem;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+/* AI Status */
+.ai-status {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 8px;
+    text-align: center;
+    animation: pulse 2s infinite;
+}
+
+.ai-badge {
+    color: white;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.8;
+    }
+}
+
 /* Chaos Mode Toggle */
 .chaos-toggle {
     display: flex;
