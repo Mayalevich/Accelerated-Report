@@ -390,6 +390,13 @@ function showStatus(message, type = 'info') {
     }
 }
 
+function setStatus(message) {
+    const statusDiv = document.getElementById('status');
+    if (statusDiv) {
+        statusDiv.textContent = message;
+    }
+}
+
 function getTypeEmoji(type) {
     const emojis = {
         crash: '🔴',
