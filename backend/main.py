@@ -323,10 +323,8 @@ async def find_similar_reports(report_data: dict, conn) -> List[str]:
 
 async def find_helpful_resources_with_yellowcake(report_data: dict, ai_enrichment: dict) -> List[dict]:
     """
-    Find helpful resources for developers:
-    - Stack Overflow solutions
-    - Official documentation  
-    - MDN resources
+    Find helpful resources for developers with SPECIFIC queries based on the actual issue.
+    Uses AI analysis to create targeted search queries.
     """
     if not YELLOWCAKE_API_KEY:
         print("⚠️  Yellowcake API key not set")
@@ -334,85 +332,108 @@ async def find_helpful_resources_with_yellowcake(report_data: dict, ai_enrichmen
     
     try:
         with sentry_sdk.start_span(op="resources.search", description="find_helpful_resources"):
-            # Build search query from AI analysis
-            error_description = ai_enrichment.get('description', report_data['message'])
-            category = ai_enrichment.get('category', report_data['type'])
+            # Extract specific details from report and AI analysis
+            user_message = report_data.get('message', '')
+            ai_description = ai_enrichment.get('description', '')
+            category = ai_enrichment.get('category', 'general')
+            severity = ai_enrichment.get('severity', 'medium')
             platform = report_data.get('platform', 'web')
             
-            print(f"🔍 Finding resources for: {category} on {platform}")
+            # Build SPECIFIC search query using actual error details
+            # Combine user description + AI understanding for precise results
+            search_terms = []
+            
+            # Add user's actual error message (most important!)
+            if user_message:
+                search_terms.append(user_message.strip())
+            
+            # Add AI's interpretation if it adds new information
+            if ai_description and ai_description.lower() not in user_message.lower():
+                # Extract key phrases from AI description (first sentence usually has the core issue)
+                first_sentence = ai_description.split('.')[0]
+                if len(first_sentence) < 100:  # Only if concise
+                    search_terms.append(first_sentence)
+            
+            # Build the specific query
+            specific_query = ' '.join(search_terms)
+            if len(specific_query) > 200:  # Limit length
+                specific_query = specific_query[:200]
+            
+            print(f"🔍 Finding resources for: '{specific_query}' ({category} on {platform})")
             
             resources = []
             
-            # Create search queries
-            base_query = f"{category} {platform}"
-            if report_data.get('message'):
-                base_query += f" {report_data['message'][:50]}"
-            
-            # Stack Overflow links
-            stackoverflow_url = f"https://stackoverflow.com/search?q={base_query.replace(' ', '+')}"
+            # 1. SPECIFIC Stack Overflow search with exact error
+            so_query = f"{platform} {specific_query}".replace(' ', '+')
             resources.append({
                 "type": "stackoverflow",
-                "title": f"Stack Overflow: {category.replace('_', ' ').title()} Solutions",
-                "url": stackoverflow_url,
-                "description": "Community-driven solutions and discussions"
+                "title": f"Stack Overflow: {user_message[:60] if user_message else category}",
+                "url": f"https://stackoverflow.com/search?q={so_query}",
+                "description": "Find solutions from developers who faced similar issues"
             })
             
-            # Platform-specific documentation
-            if platform == 'web':
-                mdn_query = category.replace('_', ' ')
-                resources.append({
-                    "type": "documentation",
-                    "title": "MDN Web Docs",
-                    "url": f"https://developer.mozilla.org/en-US/search?q={mdn_query.replace(' ', '+')}",
-                    "description": "Official web platform documentation"
-                })
-            elif platform == 'ios':
-                resources.append({
-                    "type": "documentation",
-                    "title": "Apple Developer Documentation",
-                    "url": "https://developer.apple.com/documentation/",
-                    "description": "Official iOS development guides"
-                })
-            elif platform == 'android':
-                resources.append({
-                    "type": "documentation",
-                    "title": "Android Developer Guides",
-                    "url": "https://developer.android.com/docs",
-                    "description": "Official Android development documentation"
-                })
+            # 2. Google search for the EXACT issue (often better than generic docs)
+            google_query = f"{platform} {specific_query} fix solution".replace(' ', '+')
+            resources.append({
+                "type": "search",
+                "title": f"Google: {user_message[:60] if user_message else 'Error Solutions'}",
+                "url": f"https://www.google.com/search?q={google_query}",
+                "description": "Broad search for tutorials, blog posts, and solutions"
+            })
             
-            # GitHub issues search
-            github_query = base_query.replace(' ', '+')
+            # 3. GitHub issues with SPECIFIC error message
+            github_query = f"{specific_query}".replace(' ', '+')
             resources.append({
                 "type": "github",
-                "title": "GitHub Issues & Discussions",
+                "title": f"GitHub Issues: {user_message[:60] if user_message else 'Related Issues'}",
                 "url": f"https://github.com/search?type=issues&q={github_query}",
-                "description": "Related GitHub issues and solutions"
+                "description": "Check if others reported similar issues in open source projects"
             })
             
-            # Category-specific resources
-            if category == 'performance':
+            # 4. Platform-specific documentation (but still targeted)
+            if platform == 'web':
+                # Extract potential API/feature names from error
+                mdn_query = f"{category} {user_message[:50]}".replace(' ', '+')
                 resources.append({
-                    "type": "tool",
-                    "title": "Web Performance Best Practices",
-                    "url": "https://web.dev/performance/",
-                    "description": "Performance optimization guides"
+                    "type": "documentation",
+                    "title": f"MDN: {category.replace('_', ' ').title()}",
+                    "url": f"https://developer.mozilla.org/en-US/search?q={mdn_query}",
+                    "description": "Official web platform API documentation"
                 })
-            elif category == 'network':
+            elif platform == 'ios':
+                apple_query = f"{specific_query}".replace(' ', '+')
                 resources.append({
-                    "type": "tool",
-                    "title": "Network Debugging Guide",
-                    "url": "https://developer.chrome.com/docs/devtools/network/",
-                    "description": "Network troubleshooting tools and guides"
+                    "type": "documentation",
+                    "title": f"Apple Developer: {category.replace('_', ' ').title()}",
+                    "url": f"https://developer.apple.com/search/?q={apple_query}",
+                    "description": "Official iOS development documentation"
+                })
+            elif platform == 'android':
+                android_query = f"{specific_query}".replace(' ', '+')
+                resources.append({
+                    "type": "documentation",
+                    "title": f"Android Docs: {category.replace('_', ' ').title()}",
+                    "url": f"https://developer.android.com/s/results?q={android_query}",
+                    "description": "Official Android development guides"
                 })
             
-            # Add to Sentry context
+            # 5. Add severity-specific debugging resources
+            if severity.lower() == 'critical' or 'crash' in category.lower():
+                resources.append({
+                    "type": "tool",
+                    "title": "Crash Debugging Best Practices",
+                    "url": f"https://www.google.com/search?q={platform}+crash+debugging+{category.replace('_', '+')}",
+                    "description": "Critical issue debugging techniques"
+                })
+            
+            # Add to Sentry context with actual query used
             if resources:
                 sentry_sdk.set_context("helpful_resources", {
                     "count": len(resources),
+                    "query_used": specific_query[:100],
                     "categories": list(set([r['type'] for r in resources]))
                 })
-                print(f"✅ Found {len(resources)} helpful resources")
+                print(f"✅ Generated {len(resources)} targeted resources for: '{specific_query[:80]}...'")
             
             return resources
             
