@@ -623,6 +623,27 @@ input:checked + .slider:before {
     font-size: 0.85rem;
 }
 
+.screenshot-container {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f3f4f6;
+    border-radius: 4px;
+}
+
+.report-screenshot {
+    max-width: 100%;
+    max-height: 400px;
+    margin-top: 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.report-screenshot:hover {
+    transform: scale(1.02);
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     .form-row {

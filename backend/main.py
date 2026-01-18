@@ -87,7 +87,8 @@ def init_db():
             confidence REAL,
             similar_reports TEXT,
             helpful_resources TEXT,
-            sentry_event_id TEXT
+            sentry_event_id TEXT,
+            screenshot_url TEXT
         )
     """)
     conn.commit()
@@ -384,6 +385,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Static files for screenshots
+from fastapi.staticfiles import StaticFiles
+import os
+screenshots_dir = "screenshots"
+os.makedirs(screenshots_dir, exist_ok=True)
+app.mount("/screenshots", StaticFiles(directory=screenshots_dir), name="screenshots")
+
 
 # Request/Response models
 class ReportCreate(BaseModel):
@@ -391,6 +399,7 @@ class ReportCreate(BaseModel):
     message: str
     platform: Optional[str] = "web"
     app_version: Optional[str] = "1.0.0"
+    screenshot: Optional[str] = None  # base64 encoded image
 
 
 class ReportResponse(BaseModel):
@@ -512,14 +521,42 @@ async def create_report(report: ReportCreate):
         with sentry_sdk.start_span(op="db.query", description="store_report_db"):
             try:
                 import json
+                import base64
+                import os
+                
+                # Save screenshot if provided
+                screenshot_url = None
+                if report.screenshot:
+                    try:
+                        # Create screenshots directory
+                        screenshots_dir = "screenshots"
+                        os.makedirs(screenshots_dir, exist_ok=True)
+                        
+                        # Extract base64 data
+                        if report.screenshot.startswith('data:image'):
+                            # Remove data:image/png;base64, prefix
+                            screenshot_data = report.screenshot.split(',')[1]
+                        else:
+                            screenshot_data = report.screenshot
+                        
+                        # Save to file
+                        screenshot_filename = f"{report_id}.png"
+                        screenshot_path = os.path.join(screenshots_dir, screenshot_filename)
+                        with open(screenshot_path, 'wb') as f:
+                            f.write(base64.b64decode(screenshot_data))
+                        
+                        screenshot_url = f"/screenshots/{screenshot_filename}"
+                    except Exception as e:
+                        print(f"Failed to save screenshot: {e}")
+                
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO reports (
                         id, created_at, type, message, platform, app_version, status,
                         description, category, severity, developer_action, confidence, 
-                        similar_reports, helpful_resources
+                        similar_reports, helpful_resources, screenshot_url
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     report_id, created_at, report.type, report.message, 
                     report.platform, report.app_version, "received",
@@ -529,7 +566,8 @@ async def create_report(report: ReportCreate):
                     ai_enrichment.get('developer_action'),
                     ai_enrichment.get('confidence'),
                     ','.join(similar_reports) if similar_reports else None,
-                    json.dumps(helpful_resources) if helpful_resources else None
+                    json.dumps(helpful_resources) if helpful_resources else None,
+                    screenshot_url
                 ))
                 conn.commit()
                 conn.close()
@@ -605,6 +643,7 @@ async def list_reports():
                 "similar_reports": row_dict.get("similar_reports"),
                 "helpful_resources": helpful_resources,
                 "sentry_event_id": row_dict.get("sentry_event_id"),
+                "screenshot_url": row_dict.get("screenshot_url"),
             })
         
         return {"reports": reports, "count": len(reports)}

@@ -100,6 +100,15 @@ function displayReports(reports) {
                     <strong>🔍 Sentry Event:</strong> <code>${report.sentry_event_id}</code>
                 </div>
             ` : ''}
+            
+            ${report.screenshot_url ? `
+                <div class="screenshot-container">
+                    <strong>📸 Screenshot:</strong><br>
+                    <a href="http://localhost:8000${report.screenshot_url}" target="_blank">
+                        <img src="http://localhost:8000${report.screenshot_url}" alt="Report screenshot" class="report-screenshot">
+                    </a>
+                </div>
+            ` : ''}
         </div>
     `).join('');
 }

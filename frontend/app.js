@@ -49,20 +49,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const type = e.currentTarget.dataset.type;
             const message = e.currentTarget.dataset.message;
             
-            // Get optional context
-            const description = quickDescription.value.trim();
-            const screenshot = screenshotInput.files[0];
-            
             // Visual feedback
             e.currentTarget.classList.add('clicked');
             setTimeout(() => e.currentTarget.classList.remove('clicked'), 300);
+            
+            // Get optional context
+            const description = quickDescription.value.trim();
+            
+            // Auto-capture screenshot
+            let screenshotData = null;
+            try {
+                const screenshotBlob = await captureScreenshot();
+                if (screenshotBlob) {
+                    // Convert to base64 for JSON transmission
+                    screenshotData = await blobToBase64(screenshotBlob);
+                    showStatus('📸 Screenshot captured!', 'success');
+                    
+                    // Show preview
+                    screenshotPreview.innerHTML = `<img src="${screenshotData}" alt="Screenshot">`;
+                    screenshotPreview.classList.remove('hidden');
+                }
+            } catch (err) {
+                console.log('Screenshot capture not available:', err);
+            }
             
             await submitReport({
                 type: type,
                 message: description ? `${message}. Note: ${description}` : message,
                 platform: detectPlatform(),
                 app_version: '1.0.0',
-                screenshot: screenshot,
+                screenshot: screenshotData,  // base64 string
             }, true); // true = quick action
             
             // Clear context after submit
@@ -73,6 +89,70 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+// Auto-capture screenshot using html2canvas or fallback
+async function captureScreenshot() {
+    try {
+        // Method 1: Try to use html2canvas if available
+        if (typeof html2canvas !== 'undefined') {
+            const canvas = await html2canvas(document.body);
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            return blob;
+        }
+        
+        // Method 2: Try DisplayMediaCapture API (screen capture)
+        if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ 
+                video: { mediaSource: 'screen' } 
+            });
+            
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.play();
+            
+            // Wait for video to be ready
+            await new Promise(resolve => {
+                video.onloadedmetadata = resolve;
+            });
+            
+            // Capture frame
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            
+            // Stop stream
+            stream.getTracks().forEach(track => track.stop());
+            
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            return blob;
+        }
+        
+        // Method 3: Check if manual file was uploaded
+        if (screenshotInput.files[0]) {
+            return screenshotInput.files[0];
+        }
+        
+        return null;
+    } catch (err) {
+        console.log('Screenshot capture failed:', err);
+        // Try manual upload as fallback
+        if (screenshotInput.files[0]) {
+            return screenshotInput.files[0];
+        }
+        return null;
+    }
+}
+
+// Convert blob to base64
+function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
 
 // Auto-detect platform
 function detectPlatform() {
