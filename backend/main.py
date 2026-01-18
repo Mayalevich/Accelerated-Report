@@ -46,7 +46,15 @@ sentry_sdk.init(
     ],
     # Enable performance monitoring
     enable_tracing=True,
+    # Add data like request headers and IP for users
+    send_default_pii=True,
 )
+
+# Print Sentry status
+if os.getenv("SENTRY_DSN"):
+    print("✅ Sentry monitoring enabled")
+else:
+    print("⚠️  Sentry monitoring disabled (set SENTRY_DSN to enable)")
 
 # Database setup
 DB_NAME = "reports.db"
@@ -65,12 +73,13 @@ def init_db():
             platform TEXT,
             app_version TEXT,
             status TEXT DEFAULT 'received',
-            summary TEXT,
+            description TEXT,
             category TEXT,
             severity TEXT,
+            developer_action TEXT,
             confidence REAL,
-            embedding_hash TEXT,
-            similar_reports TEXT
+            similar_reports TEXT,
+            sentry_event_id TEXT
         )
     """)
     conn.commit()
@@ -79,30 +88,38 @@ def init_db():
 
 # AI Enrichment Functions
 
-async def enrich_with_ai(report_data: dict) -> dict:
+async def enrich_with_gemini(report_data: dict) -> dict:
     """
-    Use Gemini AI to analyze and categorize the report.
-    Returns enrichment data: summary, category, severity, confidence.
+    Use Gemini AI to help user communicate problem better and help developer understand faster.
+    
+    For USER: Expands minimal input into detailed context
+    For DEVELOPER: Categorizes, prioritizes, and suggests solutions
     """
     if not gemini_model:
         return {}
     
     try:
         with sentry_sdk.start_span(op="ai.inference", description="gemini_enrichment"):
-            prompt = f"""Analyze this user report and provide:
-1. A one-line summary (max 10 words)
-2. Category (crash/performance/bug/feature_request/ui_issue)
-3. Severity (critical/high/medium/low)
-4. Confidence score (0.0-1.0)
+            # Enhanced prompt to help both user and developer
+            prompt = f"""You are helping with bug reporting. The user submitted a quick report.
 
-Report Type: {report_data['type']}
-Message: {report_data['message']}
-Platform: {report_data.get('platform', 'unknown')}
+USER INPUT:
+- Type: {report_data['type']}
+- Message: "{report_data['message']}"
+- Platform: {report_data.get('platform', 'unknown')}
+
+YOUR TASK:
+1. Expand the user's message into a clear problem description (2-3 sentences)
+2. Categorize: crash/performance/bug/feature_request/ui_issue/network
+3. Assess severity: critical/high/medium/low
+4. Suggest what the developer should check first (1 sentence)
+5. Give confidence score (0.0-1.0)
 
 Respond in this exact format:
-SUMMARY: [summary]
+DESCRIPTION: [expanded description]
 CATEGORY: [category]
 SEVERITY: [severity]
+DEVELOPER_ACTION: [what to check]
 CONFIDENCE: [score]"""
             
             response = gemini_model.generate_content(prompt)
@@ -113,59 +130,100 @@ CONFIDENCE: [score]"""
             for line in result_text.split('\n'):
                 if ':' in line:
                     key, value = line.split(':', 1)
-                    key = key.strip().lower()
+                    key = key.strip().lower().replace(' ', '_')
                     value = value.strip()
                     enrichment[key] = value
             
+            # Add to Sentry context for better issue grouping
+            sentry_sdk.set_context("ai_analysis", {
+                "description": enrichment.get('description', ''),
+                "category": enrichment.get('category', ''),
+                "severity": enrichment.get('severity', 'medium'),
+                "developer_action": enrichment.get('developer_action', ''),
+                "confidence": enrichment.get('confidence', '0.5'),
+            })
+            
             return {
-                'summary': enrichment.get('summary', ''),
-                'category': enrichment.get('category', ''),
+                'description': enrichment.get('description', report_data['message']),
+                'category': enrichment.get('category', 'unknown'),
                 'severity': enrichment.get('severity', 'medium'),
+                'developer_action': enrichment.get('developer_action', 'Investigate issue'),
                 'confidence': float(enrichment.get('confidence', '0.5')),
             }
     except Exception as e:
         sentry_sdk.capture_exception(e)
-        print(f"AI enrichment failed: {e}")
+        print(f"Gemini AI enrichment failed: {e}")
         return {}
 
 
-def generate_embedding_hash(text: str) -> str:
-    """Generate a hash for similarity detection (simplified version of Yellowcake)"""
-    # Simple hash-based similarity - in production use proper embeddings
-    normalized = text.lower().strip()
-    return hashlib.md5(normalized.encode()).hexdigest()[:16]
+async def send_to_sentry_for_grouping(report_data: dict, ai_enrichment: dict):
+    """
+    Send report to Sentry so Yellowcake can group similar issues automatically.
+    
+    Yellowcake (Sentry's similarity engine) will:
+    - Group similar errors together
+    - Detect duplicate issues
+    - Show related problems in dashboard
+    """
+    try:
+        # Create a custom exception with enriched context
+        with sentry_sdk.push_scope() as scope:
+            # Add all context for Yellowcake to analyze
+            scope.set_tag("report_type", report_data['type'])
+            scope.set_tag("platform", report_data.get('platform', 'unknown'))
+            scope.set_tag("ai_category", ai_enrichment.get('category', 'unknown'))
+            scope.set_tag("severity", ai_enrichment.get('severity', 'medium'))
+            
+            # Add user context
+            scope.set_context("report", {
+                "original_message": report_data['message'],
+                "ai_description": ai_enrichment.get('description', ''),
+                "developer_action": ai_enrichment.get('developer_action', ''),
+                "app_version": report_data.get('app_version', '1.0.0'),
+            })
+            
+            # Set fingerprint for Yellowcake grouping
+            # Reports with same type and similar AI category will be grouped
+            scope.fingerprint = [
+                report_data['type'],
+                ai_enrichment.get('category', 'unknown'),
+                report_data.get('platform', 'unknown')
+            ]
+            
+            # Capture as message (not error) for user reports
+            sentry_sdk.capture_message(
+                f"User Report: {ai_enrichment.get('description', report_data['message'])}",
+                level=ai_enrichment.get('severity', 'info')
+            )
+            
+    except Exception as e:
+        print(f"Failed to send to Sentry: {e}")
 
 
 async def find_similar_reports(report_data: dict, conn) -> List[str]:
     """
-    Find similar reports using Yellowcake-inspired similarity detection.
-    Returns list of similar report IDs.
+    Find similar reports in local database by category and type.
+    Note: Sentry's Yellowcake does the real similarity detection in the dashboard.
     """
     try:
-        with sentry_sdk.start_span(op="similarity.search", description="yellowcake_search"):
-            # Generate embedding hash for this report
-            embedding_hash = generate_embedding_hash(report_data['message'])
-            
-            # Find reports with similar hashes or same type
+        with sentry_sdk.start_span(op="db.query", description="find_similar_local"):
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT id, message, embedding_hash FROM reports 
-                WHERE type = ? 
+                SELECT id, message, category FROM reports 
+                WHERE type = ? AND category IS NOT NULL
                 ORDER BY created_at DESC 
-                LIMIT 50
+                LIMIT 10
             """, (report_data['type'],))
             
             existing_reports = cursor.fetchall()
             similar_ids = []
             
-            # Simple similarity check
-            for report_id, message, existing_hash in existing_reports:
-                if existing_hash == embedding_hash:
-                    similar_ids.append(report_id)
-                elif report_data['message'].lower() in message.lower():
+            # Simple keyword matching (real similarity is in Sentry's Yellowcake)
+            for report_id, message, category in existing_reports:
+                if category == report_data.get('category'):
                     similar_ids.append(report_id)
                 
-                if len(similar_ids) >= 3:  # Max 3 similar reports
+                if len(similar_ids) >= 3:
                     break
             
             return similar_ids
@@ -252,6 +310,13 @@ async def boom():
     raise Exception("💥 Boom! This is a test error for Sentry.")
 
 
+@app.get("/sentry-debug")
+async def sentry_debug():
+    """Official Sentry verification endpoint"""
+    division_by_zero = 1 / 0
+    return {"status": "This should never return"}
+
+
 @app.post("/reports", response_model=ReportResponse)
 async def create_report(report: ReportCreate):
     """
@@ -289,41 +354,42 @@ async def create_report(report: ReportCreate):
         report_id = str(uuid.uuid4())
         created_at = datetime.utcnow().isoformat()
         
-        # Span 2: AI Enrichment (Gemini)
+        # Span 2: AI Enrichment with Gemini (helps user communicate better)
         ai_enrichment = {}
         if gemini_model:
-            ai_enrichment = await enrich_with_ai(report.dict())
+            ai_enrichment = await enrich_with_gemini(report.dict())
             transaction.set_tag("ai_enriched", True)
             transaction.set_tag("ai_category", ai_enrichment.get('category', 'unknown'))
+            transaction.set_tag("ai_severity", ai_enrichment.get('severity', 'medium'))
         
-        # Span 3: Similarity Detection (Yellowcake-inspired)
+        # Span 3: Send to Sentry for Yellowcake grouping
+        await send_to_sentry_for_grouping(report.dict(), ai_enrichment)
+        
+        # Span 4: Find similar reports in local DB
         conn = sqlite3.connect(DB_NAME)
-        similar_reports = await find_similar_reports(report.dict(), conn)
+        similar_reports = await find_similar_reports({**report.dict(), **ai_enrichment}, conn)
         if similar_reports:
-            transaction.set_tag("has_duplicates", True)
+            transaction.set_tag("has_local_duplicates", True)
             transaction.set_data("similar_count", len(similar_reports))
         
-        # Generate embedding hash
-        embedding_hash = generate_embedding_hash(report.message)
-        
-        # Span 4: Store in database
+        # Span 5: Store in database
         with sentry_sdk.start_span(op="db.query", description="store_report_db"):
             try:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO reports (
                         id, created_at, type, message, platform, app_version, status,
-                        summary, category, severity, confidence, embedding_hash, similar_reports
+                        description, category, severity, developer_action, confidence, similar_reports
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     report_id, created_at, report.type, report.message, 
                     report.platform, report.app_version, "received",
-                    ai_enrichment.get('summary'),
+                    ai_enrichment.get('description'),
                     ai_enrichment.get('category'),
                     ai_enrichment.get('severity'),
+                    ai_enrichment.get('developer_action'),
                     ai_enrichment.get('confidence'),
-                    embedding_hash,
                     ','.join(similar_reports) if similar_reports else None
                 ))
                 conn.commit()
@@ -373,10 +439,12 @@ async def list_reports():
                 "platform": row["platform"],
                 "app_version": row["app_version"],
                 "status": row["status"],
-                "summary": row["summary"],
-                "category": row["category"],
-                "severity": row["severity"],
-                "confidence": row["confidence"],
+                "description": row.get("description"),
+                "category": row.get("category"),
+                "severity": row.get("severity"),
+                "developer_action": row.get("developer_action"),
+                "confidence": row.get("confidence"),
+                "similar_reports": row.get("similar_reports"),
             })
         
         return {"reports": reports, "count": len(reports)}
