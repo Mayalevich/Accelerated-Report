@@ -36,6 +36,13 @@ else:
     gemini_model = None
     print("⚠️  Gemini AI disabled (set GEMINI_API_KEY to enable)")
 
+# Initialize Yellowcake for finding helpful resources
+YELLOWCAKE_API_KEY = os.getenv("YELLOWCAKE_API_KEY")
+if YELLOWCAKE_API_KEY:
+    print("✅ Yellowcake enabled (will fetch helpful resources)")
+else:
+    print("⚠️  Yellowcake disabled (set YELLOWCAKE_API_KEY to enable)")
+
 # Initialize Sentry
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN"),
@@ -79,6 +86,7 @@ def init_db():
             developer_action TEXT,
             confidence REAL,
             similar_reports TEXT,
+            helpful_resources TEXT,
             sentry_event_id TEXT
         )
     """)
@@ -158,9 +166,9 @@ CONFIDENCE: [score]"""
 
 async def send_to_sentry_for_grouping(report_data: dict, ai_enrichment: dict):
     """
-    Send report to Sentry so Yellowcake can group similar issues automatically.
+    Send report to Sentry for automatic issue grouping.
     
-    Yellowcake (Sentry's similarity engine) will:
+    Sentry's built-in grouping will:
     - Group similar errors together
     - Detect duplicate issues
     - Show related problems in dashboard
@@ -168,7 +176,7 @@ async def send_to_sentry_for_grouping(report_data: dict, ai_enrichment: dict):
     try:
         # Create a custom exception with enriched context
         with sentry_sdk.push_scope() as scope:
-            # Add all context for Yellowcake to analyze
+            # Add all context for Sentry's grouping
             scope.set_tag("report_type", report_data['type'])
             scope.set_tag("platform", report_data.get('platform', 'unknown'))
             scope.set_tag("ai_category", ai_enrichment.get('category', 'unknown'))
@@ -182,7 +190,7 @@ async def send_to_sentry_for_grouping(report_data: dict, ai_enrichment: dict):
                 "app_version": report_data.get('app_version', '1.0.0'),
             })
             
-            # Set fingerprint for Yellowcake grouping
+            # Set fingerprint for Sentry's grouping
             # Reports with same type and similar AI category will be grouped
             scope.fingerprint = [
                 report_data['type'],
@@ -232,6 +240,107 @@ async def find_similar_reports(report_data: dict, conn) -> List[str]:
         return []
 
 
+async def find_helpful_resources_with_yellowcake(report_data: dict, ai_enrichment: dict) -> List[dict]:
+    """
+    Use Yellowcake to find helpful resources for developers:
+    - Stack Overflow solutions
+    - Official documentation
+    - GitHub issues
+    - Tutorial articles
+    """
+    if not YELLOWCAKE_API_KEY:
+        return []
+    
+    try:
+        with sentry_sdk.start_span(op="yellowcake.search", description="find_helpful_resources"):
+            import httpx
+            
+            # Build search query from AI analysis
+            error_description = ai_enrichment.get('description', report_data['message'])
+            category = ai_enrichment.get('category', 'unknown')
+            platform = report_data.get('platform', 'unknown')
+            
+            # Search Stack Overflow for solutions
+            stackoverflow_query = f"{category} {platform} error solution"
+            
+            resources = []
+            
+            # Use Yellowcake to extract Stack Overflow solutions
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.post(
+                        "https://api.yellowcake.dev/v1/extract",
+                        headers={
+                            "Content-Type": "application/json",
+                            "X-API-Key": YELLOWCAKE_API_KEY,
+                        },
+                        json={
+                            "url": f"https://stackoverflow.com/search?q={stackoverflow_query}",
+                            "prompt": f"Find top 3 relevant solutions for: {error_description}"
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        stackoverflow_data = response.json()
+                        if stackoverflow_data.get('results'):
+                            resources.append({
+                                "type": "stackoverflow",
+                                "title": "Stack Overflow Solutions",
+                                "links": stackoverflow_data.get('results', [])[:3],
+                                "description": "Community solutions for similar issues"
+                            })
+            except Exception as e:
+                print(f"Yellowcake Stack Overflow search failed: {e}")
+            
+            # Search for official documentation
+            if platform in ['ios', 'android', 'web']:
+                doc_url = {
+                    'ios': 'https://developer.apple.com',
+                    'android': 'https://developer.android.com',
+                    'web': 'https://developer.mozilla.org'
+                }.get(platform)
+                
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        response = await client.post(
+                            "https://api.yellowcake.dev/v1/extract",
+                            headers={
+                                "Content-Type": "application/json",
+                                "X-API-Key": YELLOWCAKE_API_KEY,
+                            },
+                            json={
+                                "url": doc_url,
+                                "prompt": f"Find documentation for: {error_description}"
+                            }
+                        )
+                        
+                        if response.status_code == 200:
+                            doc_data = response.json()
+                            if doc_data.get('results'):
+                                resources.append({
+                                    "type": "documentation",
+                                    "title": f"{platform.upper()} Official Documentation",
+                                    "links": doc_data.get('results', [])[:2],
+                                    "description": "Official platform documentation"
+                                })
+                except Exception as e:
+                    print(f"Yellowcake documentation search failed: {e}")
+            
+            # Add to Sentry context
+            if resources:
+                sentry_sdk.set_context("helpful_resources", {
+                    "resources": resources,
+                    "source": "yellowcake"
+                })
+            
+            return resources
+            
+    except Exception as e:
+        sentry_sdk.capture_exception(e)
+        print(f"Yellowcake resource search failed: {e}")
+        return []
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Initialize database
@@ -273,6 +382,7 @@ class ReportResponse(BaseModel):
     category: Optional[str] = None
     severity: Optional[str] = None
     similar_count: int = 0
+    helpful_resources: List[dict] = []
 
 
 class Report(BaseModel):
@@ -362,26 +472,36 @@ async def create_report(report: ReportCreate):
             transaction.set_tag("ai_category", ai_enrichment.get('category', 'unknown'))
             transaction.set_tag("ai_severity", ai_enrichment.get('severity', 'medium'))
         
-        # Span 3: Send to Sentry for Yellowcake grouping
+        # Span 3: Find helpful resources with Yellowcake
+        helpful_resources = []
+        if YELLOWCAKE_API_KEY:
+            helpful_resources = await find_helpful_resources_with_yellowcake(report.dict(), ai_enrichment)
+            if helpful_resources:
+                transaction.set_tag("has_helpful_resources", True)
+                transaction.set_data("resources_found", len(helpful_resources))
+        
+        # Span 4: Send to Sentry for automatic grouping
         await send_to_sentry_for_grouping(report.dict(), ai_enrichment)
         
-        # Span 4: Find similar reports in local DB
+        # Span 5: Find similar reports in local DB
         conn = sqlite3.connect(DB_NAME)
         similar_reports = await find_similar_reports({**report.dict(), **ai_enrichment}, conn)
         if similar_reports:
             transaction.set_tag("has_local_duplicates", True)
             transaction.set_data("similar_count", len(similar_reports))
         
-        # Span 5: Store in database
+        # Span 6: Store in database
         with sentry_sdk.start_span(op="db.query", description="store_report_db"):
             try:
+                import json
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO reports (
                         id, created_at, type, message, platform, app_version, status,
-                        description, category, severity, developer_action, confidence, similar_reports
+                        description, category, severity, developer_action, confidence, 
+                        similar_reports, helpful_resources
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     report_id, created_at, report.type, report.message, 
                     report.platform, report.app_version, "received",
@@ -390,7 +510,8 @@ async def create_report(report: ReportCreate):
                     ai_enrichment.get('severity'),
                     ai_enrichment.get('developer_action'),
                     ai_enrichment.get('confidence'),
-                    ','.join(similar_reports) if similar_reports else None
+                    ','.join(similar_reports) if similar_reports else None,
+                    json.dumps(helpful_resources) if helpful_resources else None
                 ))
                 conn.commit()
                 conn.close()
@@ -405,6 +526,7 @@ async def create_report(report: ReportCreate):
                 "type": report.type,
                 "platform": report.platform,
                 "ai_enriched": str(bool(ai_enrichment)),
+                "has_resources": str(bool(helpful_resources)),
             }
         )
         
@@ -414,7 +536,8 @@ async def create_report(report: ReportCreate):
             ai_enriched=bool(ai_enrichment),
             category=ai_enrichment.get('category'),
             severity=ai_enrichment.get('severity'),
-            similar_count=len(similar_reports)
+            similar_count=len(similar_reports),
+            helpful_resources=helpful_resources
         )
 
 
